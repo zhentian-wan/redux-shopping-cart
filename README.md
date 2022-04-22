@@ -302,3 +302,277 @@ export function Products() {
   );
 }
 ```
+
+### Another flow example
+
+`app/features/cart/cartSlice.ts`
+
+```ts
+import { createSlice, PayloadAction } from "@reduxjs/toolkit";
+import { RootState } from "../../app/store";
+
+export interface CartState {
+  items: { [producetID: string]: number };
+}
+
+const initialState: CartState = {
+  items: {},
+};
+
+const cartSlice = createSlice({
+  name: "cart",
+  initialState,
+  reducers: {
+    addToCart(state, action: PayloadAction<string>) {
+      const id = action.payload;
+      if (state.items[id]) {
+        state.items[id]++;
+      } else {
+        state.items[id] = 1;
+      }
+    },
+  },
+});
+
+export const { addToCart } = cartSlice.actions;
+export default cartSlice.reducer;
+
+export function getNumItems(state: RootState) {
+  let numItems = 0;
+  for (let id in state.cart.items) {
+    numItems += state.cart.items[id];
+  }
+  return numItems;
+}
+```
+
+`app/features/products/Products.tsx`
+
+```tsx
+import { addToCart } from "../cart/cartSlice";
+...
+<button onClick={() => dispatch(addToCart(product.id))}>Add to Cart 🛒</button>;
+```
+
+`app/features/products/Products.tsx`
+
+```diff
+import React from "react";
+import { Link } from "react-router-dom";
+import styles from "./CartLink.module.css";
++ import { getNumItems } from "./cartSlice";
++ import { useAppSelector } from "../../app/hooks";
+
+export function CartLink() {
++  const numItems = useAppSelector(getNumItems);
+  return (
+    <Link to="/cart" className={styles.link}>
+      <span className={styles.text}>
++        🛒&nbsp;&nbsp;{numItems ? numItems : "Cart"}
+      </span>
+    </Link>
+  );
+}
+```
+
+### createSelector
+
+In previous section we wrote
+
+```ts
+export function getNumItems(state: RootState) {
+  let numItems = 0;
+  for (let id in state.cart.items) {
+    numItems += state.cart.items[id];
+  }
+  return numItems;
+}
+```
+
+This function actually get called whenever store get updated. But we only want to call this function when items in cart changes.
+
+`app/features/cart/cartSlice.ts`
+
+```ts
+import { createSlice, PayloadAction, createSelector } from "@reduxjs/toolkit";
+...
+export const getNumItemsMemo = createSelector(
+  (state: RootState) => state.cart.items,
+  (items) => {
+    let numItems = 0;
+    for (let id in items) {
+      numItems += items[id];
+    }
+    return numItems;
+  }
+);
+```
+
+### Aggregate values from multi slices
+
+`app/features/prodcuts/productsSlice.ts`
+
+```diff
++ export const { selectAll, selectEntities } = productsSelector;
+```
+
+`app/features/cart/cartSlice.ts`
+
+```ts
+export const getTotalPrice = createSelector(
+  (state: RootState) => state.cart.items,
+  productsSlice.selectEntities,
+  (items, products) => {
+    let total = 0;
+    for (let id in items) {
+      total += (products[id]?.price ?? 0) * items[id];
+    }
+    return total.toFixed(2);
+  }
+);
+```
+
+### extraReducers
+
+Everything we added to `reducers` will be exported to Action.
+
+```ts
+// Slices
+const cartSlice = createSlice({
+  name: "cart",
+  initialState,
+  reducers: {
+    addToCart(state, action: PayloadAction<string>) {
+      const id = action.payload;
+      if (state.items[id]) {
+        state.items[id]++;
+      } else {
+        state.items[id] = 1;
+      }
+    },
+    removeFromCart(state, action: PayloadAction<string>) {
+      const id = action.payload;
+      delete state.items[id];
+    },
+    updateQuantity(
+      state,
+      action: PayloadAction<{ id: string; quantity: number }>
+    ) {
+      const { id, quantity } = action.payload;
+      state.items[id] = quantity;
+    },
+  },
+});
+// Actions
+export const { addToCart, removeFromCart, updateQuantity } = cartSlice.actions;
+```
+
+So what is some action you want custom action creator or you don't want action being created automatically.
+
+`app/features/cart/cartSlice.ts`
+
+```diff
+// Slices
+const cartSlice = createSlice({
+  name: "cart",
+  initialState,
+  reducers: {
+    addToCart(state, action: PayloadAction<string>) {
+      const id = action.payload;
+      if (state.items[id]) {
+        state.items[id]++;
+      } else {
+        state.items[id] = 1;
+      }
+    },
+    removeFromCart(state, action: PayloadAction<string>) {
+      const id = action.payload;
+      delete state.items[id];
+    },
+    updateQuantity(
+      state,
+      action: PayloadAction<{ id: string; quantity: number }>
+    ) {
+      const { id, quantity } = action.payload;
+      state.items[id] = quantity;
+    },
+  },
++  extraReducers: function (builder) {
++    builder.addCase("cart/checkout/pending", (state, action) => {
++      state.checkoutState = "LOADING";
++    });
++  },
+});
+```
+
+`app/features/cart/Cart.tsx`
+
+```tsx
+function onCheckout(e: React.FormEvent<HTMLFormElement>) {
+  e.preventDefault();
+  dispatch({
+    type: "cart/checkout/pending",
+  });
+}
+
+<form onSubmit={onCheckout}>
+  <button className={styles.button} type="submit">
+    Checkout
+  </button>
+</form>;
+```
+
+### Thunk
+
+Redux toolkit has intergated thunk already.
+
+`app/features/cart/cartSlice.ts`
+
+```ts
+extraReducers: function (builder) {
+  builder.addCase("cart/checkout/pending", (state, action) => {
+    state.checkoutState = CheckoutEnmus.LOADING;
+  });
+  builder.addCase("cart/checkout/fulfilled", (state, action) => {
+    state.checkoutState = CheckoutEnmus.READY;
+  });
+},
+// Thunks
+export function checkout() {
+  return function checkoutThunk(dispatch: AppDispatch) {
+    dispatch({
+      type: "cart/checkout/pending",
+    });
+
+    setTimeout(() => {
+      dispatch({
+        type: "cart/checkout/fulfilled",
+      });
+    }, 3000);
+  };
+}
+```
+
+`app/features/cart/Cart.tsx`
+
+```tsx
+import {
+  getTotalPrice,
+  removeFromCart,
+  updateQuantity,
+  getCheckoutState,
+  CheckoutEnmus,
+  checkout,
+} from "./cartSlice";
+
+function onCheckout(e: React.FormEvent<HTMLFormElement>) {
+  e.preventDefault();
+  dispatch(checkout());
+}
+
+<form onSubmit={onCheckout}>
+  <button className={styles.button} type="submit">
+    Checkout
+  </button>
+</form>;
+```
