@@ -1,6 +1,12 @@
-import { createSlice, PayloadAction, createSelector } from "@reduxjs/toolkit";
+import {
+  createSlice,
+  createAsyncThunk,
+  PayloadAction,
+  createSelector,
+} from "@reduxjs/toolkit";
 import { RootState, AppDispatch } from "../../app/store";
 import * as productsSlice from "../products/productsSlice";
+import { checkout, CartItems } from "../../app/api";
 
 export enum CheckoutEnmus {
   LOADING = "LOADING",
@@ -12,11 +18,13 @@ type CheckoutState = keyof typeof CheckoutEnmus;
 export interface CartState {
   items: { [producetID: string]: number };
   checkoutState: CheckoutState;
+  errorMessage: string;
 }
 
 const initialState: CartState = {
   items: {},
   checkoutState: "READY",
+  errorMessage: "",
 };
 
 // Slices
@@ -45,29 +53,61 @@ const cartSlice = createSlice({
     },
   },
   extraReducers: function (builder) {
-    builder.addCase("cart/checkout/pending", (state, action) => {
+    builder.addCase(checkoutCart.pending, (state) => {
       state.checkoutState = CheckoutEnmus.LOADING;
     });
-    builder.addCase("cart/checkout/fulfilled", (state, action) => {
-      state.checkoutState = CheckoutEnmus.READY;
+    builder.addCase(
+      checkoutCart.fulfilled,
+      (state, action: PayloadAction<{ success: boolean }>) => {
+        const { success } = action.payload;
+        if (success) {
+          state.checkoutState = CheckoutEnmus.READY;
+          state.items = {};
+        } else {
+          state.checkoutState = CheckoutEnmus.ERROR;
+        }
+      }
+    );
+    // action for rejected promise has a payload of type Error
+    builder.addCase(checkoutCart.rejected, (state, action) => {
+      state.checkoutState = CheckoutEnmus.ERROR;
+      state.errorMessage = action.error.message || "";
     });
   },
 });
 
 // Thunks
-export function checkout() {
-  return function checkoutThunk(dispatch: AppDispatch) {
-    dispatch({
-      type: "cart/checkout/pending",
-    });
+// export function checkout() {
+//   return function checkoutThunk(dispatch: AppDispatch) {
+//     dispatch({
+//       type: "cart/checkout/pending",
+//     });
 
-    setTimeout(() => {
-      dispatch({
-        type: "cart/checkout/fulfilled",
-      });
-    }, 3000);
-  };
-}
+//     setTimeout(() => {
+//       dispatch({
+//         type: "cart/checkout/fulfilled",
+//       });
+//     }, 3000);
+//   };
+// }
+
+// export const checkoutCart = createAsyncThunk(
+//   "cart/checkout",
+//   async (items: CartItems) => {
+//     const response = await checkout(items);
+//     return response;
+//   }
+// );
+
+export const checkoutCart = createAsyncThunk(
+  "cart/checkout",
+  async (_, thunkAPI) => {
+    const state = thunkAPI.getState() as RootState;
+    const items = state.cart.items;
+    const response = await checkout(items);
+    return response;
+  }
+);
 
 // Actions
 export const { addToCart, removeFromCart, updateQuantity } = cartSlice.actions;
@@ -95,6 +135,10 @@ export const getTotalPrice = createSelector(
 export const getCheckoutState = createSelector(
   getCart,
   (cart) => cart.checkoutState
+);
+export const getCartErrorMessage = createSelector(
+  getCart,
+  (cart) => cart.errorMessage
 );
 
 // Reducer

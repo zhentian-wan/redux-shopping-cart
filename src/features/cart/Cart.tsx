@@ -9,7 +9,8 @@ import {
   updateQuantity,
   getCheckoutState,
   CheckoutEnmus,
-  checkout,
+  checkoutCart,
+  getCartErrorMessage,
 } from "./cartSlice";
 
 export function Cart() {
@@ -18,6 +19,7 @@ export function Cart() {
   const items = useAppSelector((state) => state.cart.items);
   const totalPrice = useAppSelector(getTotalPrice);
   const checkoutState = useAppSelector(getCheckoutState);
+  const errorMessage = useAppSelector(getCartErrorMessage);
 
   function onQuantityChanged(
     e: React.FocusEvent<HTMLInputElement>,
@@ -29,7 +31,7 @@ export function Cart() {
 
   function onCheckout(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    dispatch(checkout());
+    dispatch(checkoutCart(items));
   }
 
   const tableClasses = classNames({
@@ -89,6 +91,9 @@ export function Cart() {
         </tfoot>
       </table>
       <form onSubmit={onCheckout}>
+        {checkoutState === "ERROR" && errorMessage ? (
+          <p className={styles.errorBox}>{errorMessage}</p>
+        ) : null}
         <button className={styles.button} type="submit">
           Checkout
         </button>

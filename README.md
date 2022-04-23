@@ -576,3 +576,301 @@ function onCheckout(e: React.FormEvent<HTMLFormElement>) {
   </button>
 </form>;
 ```
+
+### CreateAsyncThunk
+
+The key reason to use createAsyncThunk is that it generates actions for each of the different outcomes for any promised-based async call: pending, fulfilled, and rejected. We then have to use the builder callback API on the extraReducers property to map these actions back into reducer methods we then use to update our state. It's a bit of of a process but it's simpler than the alternative, which is to create a bunch of actions by hand and manually dispatch them.
+
+`app/features/cart/cartSlice.ts`
+
+```diff
+import {
+  createSlice,
++  createAsyncThunk,
+  PayloadAction,
+  createSelector,
+} from "@reduxjs/toolkit";
+import { RootState, AppDispatch } from "../../app/store";
+import * as productsSlice from "../products/productsSlice";
++ import { checkout, CartItems } from "../../app/api";
+
+export enum CheckoutEnmus {
+  LOADING = "LOADING",
+  READY = "READY",
+  ERROR = "ERROR",
+}
+type CheckoutState = keyof typeof CheckoutEnmus;
+
+export interface CartState {
+  items: { [producetID: string]: number };
+  checkoutState: CheckoutState;
+}
+
+const initialState: CartState = {
+  items: {},
+  checkoutState: "READY",
+};
+
+// Slices
+const cartSlice = createSlice({
+  name: "cart",
+  initialState,
+  reducers: {
+    addToCart(state, action: PayloadAction<string>) {
+      const id = action.payload;
+      if (state.items[id]) {
+        state.items[id]++;
+      } else {
+        state.items[id] = 1;
+      }
+    },
+    removeFromCart(state, action: PayloadAction<string>) {
+      const id = action.payload;
+      delete state.items[id];
+    },
+    updateQuantity(
+      state,
+      action: PayloadAction<{ id: string; quantity: number }>
+    ) {
+      const { id, quantity } = action.payload;
+      state.items[id] = quantity;
+    },
+  },
+  extraReducers: function (builder) {
++    builder.addCase(checkoutCart.pending, (state, action) => {
+      state.checkoutState = CheckoutEnmus.LOADING;
+    });
++    builder.addCase(checkoutCart.fulfilled, (state, action) => {
+      state.checkoutState = CheckoutEnmus.READY;
+    });
++    builder.addCase(checkoutCart.rejected, (state, action) => {
++      state.checkoutState = CheckoutEnmus.ERROR;
++    });
+  },
+});
+
+// Thunks
+- export function checkout() {
+-   return function checkoutThunk(dispatch: AppDispatch) {
+-     dispatch({
+-       type: "cart/checkout/pending",
+-     });
+-     setTimeout(() => {
+-       dispatch({
+-         type: "cart/checkout/fulfilled",
+-       });
+-     }, 3000);
+-   };
+- }
+
++ export const checkoutCart = createAsyncThunk(
++   "cart/checkout",
++   async (items: CartItems) => {
++     const response = await checkout(items);
++     return response;
++   }
++ );
+
+// Actions
+export const { addToCart, removeFromCart, updateQuantity } = cartSlice.actions;
+
+// Selectors
+export const getCart = (state: RootState) => state.cart;
+export const getCartItems = createSelector(getCart, (cart) => cart.items);
+export const getCartItemsIds = createSelector(getCartItems, (items) =>
+  Object.keys(items)
+);
+export const getItemCounts = createSelector(getCartItems, (items) =>
+  Object.values(items)
+);
+export const getNumItems = createSelector(getItemCounts, (counts) =>
+  counts.reduce((acc, count) => acc + count, 0)
+);
+export const getTotalPrice = createSelector(
+  getCartItems,
+  productsSlice.selectEntities,
+  (items, products) =>
+    Object.keys(items)
+      .reduce((total, id) => total + (products[id]?.price ?? 0) * items[id], 0)
+      .toFixed(2)
+);
+export const getCheckoutState = createSelector(
+  getCart,
+  (cart) => cart.checkoutState
+);
+
+// Reducer
+export default cartSlice.reducer;
+```
+
+It generates promise lifecycle action types based on the action type prefix that you pass in, and returns a thunk action creator that will run the promise callback and dispatch the lifecycle actions based on the returned promise.
+
+```ts
+checkoutCart.pending;
+checkoutCart.fulfilled;
+checkoutCart.rejected;
+```
+
+### Error message for Async Thunk action
+
+`app/features/cart/cartSlice.ts`
+
+```diff
+import {
+  createSlice,
+  createAsyncThunk,
+  PayloadAction,
+  createSelector,
+} from "@reduxjs/toolkit";
+import { RootState, AppDispatch } from "../../app/store";
+import * as productsSlice from "../products/productsSlice";
+import { checkout, CartItems } from "../../app/api";
+
+export enum CheckoutEnmus {
+  LOADING = "LOADING",
+  READY = "READY",
+  ERROR = "ERROR",
+}
+type CheckoutState = keyof typeof CheckoutEnmus;
+
+export interface CartState {
+  items: { [producetID: string]: number };
+  checkoutState: CheckoutState;
++  errorMessage: string;
+}
+
+const initialState: CartState = {
+  items: {},
+  checkoutState: "READY",
++  errorMessage: "",
+};
+
+// Slices
+const cartSlice = createSlice({
+  name: "cart",
+  initialState,
+  reducers: {
+    addToCart(state, action: PayloadAction<string>) {
+      const id = action.payload;
+      if (state.items[id]) {
+        state.items[id]++;
+      } else {
+        state.items[id] = 1;
+      }
+    },
+    removeFromCart(state, action: PayloadAction<string>) {
+      const id = action.payload;
+      delete state.items[id];
+    },
+    updateQuantity(
+      state,
+      action: PayloadAction<{ id: string; quantity: number }>
+    ) {
+      const { id, quantity } = action.payload;
+      state.items[id] = quantity;
+    },
+  },
+  extraReducers: function (builder) {
+    builder.addCase(checkoutCart.pending, (state) => {
+      state.checkoutState = CheckoutEnmus.LOADING;
+    });
+    builder.addCase(checkoutCart.fulfilled, (state) => {
+      state.checkoutState = CheckoutEnmus.READY;
+    });
++    // action for rejected promise has a payload of type Error
++    builder.addCase(checkoutCart.rejected, (state, action) => {
++      state.checkoutState = CheckoutEnmus.ERROR;
++      state.errorMessage = action.error.message || "";
++    });
+  },
+});
+
+// Thunks
+export const checkoutCart = createAsyncThunk(
+  "cart/checkout",
+  async (items: CartItems) => {
+    const response = await checkout(items);
+    return response;
+  }
+);
+
+// Actions
+export const { addToCart, removeFromCart, updateQuantity } = cartSlice.actions;
+
+// Selectors
+export const getCart = (state: RootState) => state.cart;
+export const getCartItems = createSelector(getCart, (cart) => cart.items);
+export const getCartItemsIds = createSelector(getCartItems, (items) =>
+  Object.keys(items)
+);
+export const getItemCounts = createSelector(getCartItems, (items) =>
+  Object.values(items)
+);
+export const getNumItems = createSelector(getItemCounts, (counts) =>
+  counts.reduce((acc, count) => acc + count, 0)
+);
+export const getTotalPrice = createSelector(
+  getCartItems,
+  productsSlice.selectEntities,
+  (items, products) =>
+    Object.keys(items)
+      .reduce((total, id) => total + (products[id]?.price ?? 0) * items[id], 0)
+      .toFixed(2)
+);
+export const getCheckoutState = createSelector(
+  getCart,
+  (cart) => cart.checkoutState
+);
++ export const getCartErrorMessage = createSelector(
++   getCart,
++   (cart) => cart.errorMessage
++ );
+
+// Reducer
+export default cartSlice.reducer;
+```
+
+`app/features/Cart.tsx``
+
+```tsx
+import {
+  getTotalPrice,
+  removeFromCart,
+  updateQuantity,
+  getCheckoutState,
+  CheckoutEnmus,
+  checkoutCart,
+  getCartErrorMessage,
+} from "./cartSlice";
+...
+  <form onSubmit={onCheckout}>
+    {checkoutState === "ERROR" && errorMessage ? (
+      <p className={styles.errorBox}>{errorMessage}</p>
+    ) : null}
+    <button className={styles.button} type="submit">
+      Checkout
+    </button>
+  </form>
+```
+
+### Global State inside of Async Thunks
+
+```ts
+// export const checkoutCart = createAsyncThunk(
+//   "cart/checkout",
+//   async (items: CartItems) => {
+//     const response = await checkout(items);
+//     return response;
+//   }
+// );
+
+export const checkoutCart = createAsyncThunk(
+  "cart/checkout",
+  async (_, thunkAPI) => {
+    const state = thunkAPI.getState() as RootState;
+    const items = state.cart.items;
+    const response = await checkout(items);
+    return response;
+  }
+);
+```
