@@ -874,3 +874,47 @@ export const checkoutCart = createAsyncThunk(
   }
 );
 ```
+
+### createListenerMiddleware
+
+A Redux middleware that lets you define "listener" entries that contain an "effect" callback with additional logic, and a way to specify when that callback should run based on dispatched actions or state changes.
+
+[createListenerMiddleware Doc](https://redux-toolkit.js.org/api/createListenerMiddleware)
+
+`app/features/cart/cartSlice.ts`
+
+For example, we want to check when `addToCart` action happens, the id
+which been added to cart is `207` or not.
+
+If it is, then based on `Math.random() > 0.5` in a child task, to decide whether let it
+be added to cart or remove it.
+
+```ts
+// middleware
+export const listenerMiddleware = createListenerMiddleware();
+listenerMiddleware.startListening({
+  actionCreator: cartSlice.actions.addToCart,
+  effect: async (action: PayloadAction<string>, listenerApi) => {
+    console.log("Added cart item", JSON.stringify(action.payload));
+    listenerApi.cancelActiveListeners();
+    if (await listenerApi.condition(() => action.payload === "207")) {
+      console.log("Detected item is 207");
+      const task = listenerApi.fork(async (forkApi) => {
+        await forkApi.delay(1000);
+        return Math.random() > 0.5;
+      });
+      const result = await task.result;
+      if (result.status === "ok") {
+        // Logs the `42` result value that was returned
+        console.log("Child succeeded: ", result.value);
+        if (!result.value) {
+          console.log("Remove item from cart");
+          listenerApi.dispatch(
+            cartSlice.actions.removeFromCart(action.payload)
+          );
+        }
+      }
+    }
+  },
+});
+```

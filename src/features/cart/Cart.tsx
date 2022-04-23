@@ -31,7 +31,7 @@ export function Cart() {
 
   function onCheckout(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    dispatch(checkoutCart(items));
+    dispatch(checkoutCart());
   }
 
   const tableClasses = classNames({
@@ -57,7 +57,7 @@ export function Cart() {
             const product = products.find((p) => p.id === id);
             return (
               product && (
-                <tr>
+                <tr key={id}>
                   <td>{product.name}</td>
                   <td>
                     <input

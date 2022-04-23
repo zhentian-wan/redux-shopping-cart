@@ -1,5 +1,5 @@
 import { configureStore } from "@reduxjs/toolkit";
-import cartReducer from "../features/cart/cartSlice";
+import cartReducer, { listenerMiddleware } from "../features/cart/cartSlice";
 import productsReducer from "../features/products/productsSlice";
 
 export const store = configureStore({
@@ -7,6 +7,8 @@ export const store = configureStore({
     cart: cartReducer,
     products: productsReducer,
   },
+  middleware: (getDefaultMiddleware) =>
+    getDefaultMiddleware().prepend(listenerMiddleware.middleware),
 });
 
 export type RootState = ReturnType<typeof store.getState>;

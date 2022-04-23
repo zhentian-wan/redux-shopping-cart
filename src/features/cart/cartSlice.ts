@@ -3,6 +3,7 @@ import {
   createAsyncThunk,
   PayloadAction,
   createSelector,
+  createListenerMiddleware,
 } from "@reduxjs/toolkit";
 import { RootState, AppDispatch } from "../../app/store";
 import * as productsSlice from "../products/productsSlice";
@@ -140,6 +141,34 @@ export const getCartErrorMessage = createSelector(
   getCart,
   (cart) => cart.errorMessage
 );
+
+// middleware
+export const listenerMiddleware = createListenerMiddleware();
+listenerMiddleware.startListening({
+  actionCreator: cartSlice.actions.addToCart,
+  effect: async (action: PayloadAction<string>, listenerApi) => {
+    console.log("Added cart item", JSON.stringify(action.payload));
+    listenerApi.cancelActiveListeners();
+    if (await listenerApi.condition(() => action.payload === "207")) {
+      console.log("Detected item is 207");
+      const task = listenerApi.fork(async (forkApi) => {
+        await forkApi.delay(1000);
+        return Math.random() > 0.5;
+      });
+      const result = await task.result;
+      if (result.status === "ok") {
+        // Logs the `42` result value that was returned
+        console.log("Child succeeded: ", result.value);
+        if (!result.value) {
+          console.log("Remove item from cart");
+          listenerApi.dispatch(
+            cartSlice.actions.removeFromCart(action.payload)
+          );
+        }
+      }
+    }
+  },
+});
 
 // Reducer
 export default cartSlice.reducer;
